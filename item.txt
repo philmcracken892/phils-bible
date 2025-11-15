@@ -1,0 +1,1 @@
+bible = { name = 'bible', label = 'bible', type = 'item',weight = 1, type = 'bible', image = 'bible.png',unique = false, useable = true, shouldClose = true, description = 'bible' },
