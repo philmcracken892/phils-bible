@@ -4,12 +4,63 @@ local currentAction = nil
 local onCooldown = false
 local activeHymnSound = nil
 local hymnPlaying = false
+local isMenuOpen = false
+local inputPending = false
+local inputData = nil
+
+---------------------------------
+-- NUI FUNCTIONS
+---------------------------------
+
+local function Notify(data)
+    SendNUIMessage({
+        action = 'showNotification',
+        data = data
+    })
+end
+
+local function ShowMenu(menuData)
+    isMenuOpen = true
+    SetNuiFocus(true, true)
+    SendNUIMessage({
+        action = 'showMenu',
+        data = menuData
+    })
+end
+
+local function HideMenu()
+    isMenuOpen = false
+    SetNuiFocus(false, false)
+    SendNUIMessage({
+        action = 'hideMenu'
+    })
+end
+
+local function ShowInput(inputConfig, callback)
+    inputPending = true
+    inputData = { callback = callback }
+    SetNuiFocus(true, true)
+    SendNUIMessage({
+        action = 'showInput',
+        data = inputConfig
+    })
+end
+
+local function HideInput()
+    inputPending = false
+    inputData = nil
+    if not isMenuOpen then
+        SetNuiFocus(false, false)
+    end
+    SendNUIMessage({
+        action = 'hideInput'
+    })
+end
 
 ---------------------------------
 -- UTILITY FUNCTIONS
 ---------------------------------
 
--- Function to stop animation
 local function StopBibleAnimation()
     local ped = PlayerPedId()
     ClearPedTasksImmediately(ped)
@@ -17,18 +68,12 @@ local function StopBibleAnimation()
     currentAction = nil
 end
 
--- Function to start scenario with bible
 local function StartBibleScenario()
     local ped = PlayerPedId()
-    
-    -- Clear any existing tasks
     ClearPedTasksImmediately(ped)
-    
-    -- Start the scenario (this includes the book prop automatically)
     TaskStartScenarioInPlace(ped, GetHashKey(Config.Scenario), 0, true, false, false, false)
 end
 
--- Function to check if xsound is available
 local function isXsoundAvailable()
     return GetResourceState('xsound') == 'started'
 end
@@ -37,7 +82,6 @@ end
 -- BIBLE ACTIONS
 ---------------------------------
 
--- Function to handle reading
 local function ReadBible()
     if isHoldingBible then
         StopBibleAnimation()
@@ -48,16 +92,15 @@ local function ReadBible()
     isHoldingBible = true
     currentAction = 'reading'
     
-    lib.notify({
+    Notify({
         title = 'Holy Bible',
         description = Config.Messages.reading,
         type = 'info',
-        duration = 5000,
-        icon = 'book-bible'
+        icon = 'book-bible',
+        duration = 5000
     })
 end
 
--- Function to hold bible
 local function HoldBible()
     if isHoldingBible then
         StopBibleAnimation()
@@ -68,12 +111,12 @@ local function HoldBible()
     isHoldingBible = true
     currentAction = 'holding'
     
-    lib.notify({
+    Notify({
         title = 'Holy Bible',
         description = Config.Messages.holding,
         type = 'info',
-        duration = 5000,
-        icon = 'book'
+        icon = 'book',
+        duration = 5000
     })
 end
 
@@ -81,15 +124,14 @@ end
 -- BLESSING FUNCTIONS
 ---------------------------------
 
--- Function to bless
 local function Bless()
     if onCooldown then
-        lib.notify({
+        Notify({
             title = 'Blessing',
             description = Config.Messages.cooldown,
             type = 'error',
-            duration = 3000,
-            icon = 'clock'
+            icon = 'clock',
+            duration = 3000
         })
         return
     end
@@ -103,126 +145,222 @@ local function Bless()
     isHoldingBible = true
     currentAction = 'blessing'
     
-    lib.notify({
+    Notify({
         title = 'Blessing',
         description = Config.Messages.blessing,
         type = 'success',
-        duration = 5000,
-        icon = 'hands-praying'
+        icon = 'hands-praying',
+        duration = 5000
     })
     
-    -- Trigger server event for blessing
     TriggerServerEvent('priest:server:bless', GetEntityCoords(PlayerPedId()))
     
-    -- Set cooldown
     onCooldown = true
     SetTimeout(Config.Blessing.cooldown, function()
         onCooldown = false
     end)
 end
 
--- Receive blessing notification
 RegisterNetEvent('priest:client:receiveBlessing', function(healAmount)
-    lib.notify({
+    Notify({
         title = 'Divine Blessing',
         description = Config.Messages.blessed,
         type = 'success',
-        duration = 5000,
-        icon = 'cross'
+        icon = 'cross',
+        duration = 5000
     })
 end)
 
--- Receive blessing count
 RegisterNetEvent('priest:client:blessingCount', function(count)
     if count > 0 then
-        lib.notify({
+        Notify({
             title = 'Blessing Complete',
             description = string.format(Config.Messages.blessedSelf, count),
             type = 'success',
-            duration = 5000,
-            icon = 'hands-praying'
+            icon = 'hands-praying',
+            duration = 5000
         })
     else
-        lib.notify({
+        Notify({
             title = 'Blessing',
             description = Config.Messages.noNearby,
             type = 'warning',
-            duration = 3000,
-            icon = 'triangle-exclamation'
+            icon = 'triangle-exclamation',
+            duration = 3000
         })
     end
 end)
+
+---------------------------------
+-- NOTIFICATION & SERMON EVENTS
+---------------------------------
+
+RegisterNetEvent('priest:client:notify', function(data)
+    Notify(data)
+end)
+
+-- Sermon display (NO MOUSE LOCK - display only!)
+RegisterNetEvent('priest:client:showSermon', function(data)
+    SendNUIMessage({
+        action = 'showSermon',
+        data = data
+    })
+    -- NO SetNuiFocus here! Player keeps full control
+end)
+
+-- Allow player to dismiss sermon with Backspace
+CreateThread(function()
+    while true do
+        Wait(0)
+        -- Backspace key to dismiss sermon
+        if IsControlJustPressed(0, 0x156F7119) then -- INPUT_CELLPHONE_CANCEL (Backspace)
+            SendNUIMessage({
+                action = 'hideSermon'
+            })
+        end
+    end
+end)
+
+---------------------------------
+-- HYMN FUNCTIONS
+---------------------------------
+
+local function StopHymn()
+    if activeHymnSound then
+        exports.xsound:Destroy(activeHymnSound)
+        activeHymnSound = nil
+    end
+    
+    hymnPlaying = false
+    
+    Notify({
+        title = 'Hymn Ended',
+        description = Config.Messages.hymnStopped,
+        type = 'info',
+        icon = 'music',
+        duration = 3000
+    })
+end
+
+local function PlayHymn(hymnTitle, hymnUrl)
+    if not isXsoundAvailable() then
+        Notify({
+            title = 'Error',
+            description = Config.Messages.xsoundNotFound,
+            type = 'error',
+            icon = 'exclamation-triangle',
+            duration = 5000
+        })
+        return
+    end
+    
+    local playerCoords = GetEntityCoords(PlayerPedId())
+    
+    if hymnPlaying or activeHymnSound then
+        TriggerServerEvent('priest:server:stopHymn')
+        Wait(500)
+    end
+    
+    TriggerServerEvent('priest:server:playHymn', playerCoords, hymnTitle, hymnUrl)
+end
+
+RegisterNetEvent('priest:client:playHymn', function(coords, radius, hymnTitle, hymnUrl, volume)
+    if not isXsoundAvailable() then return end
+    
+    if activeHymnSound then
+        exports.xsound:Destroy(activeHymnSound)
+        Wait(100)
+    end
+    
+    hymnPlaying = false
+    
+    local soundId = 'priest_hymn_' .. math.random(10000, 99999)
+    activeHymnSound = soundId
+    
+    exports.xsound:PlayUrlPos(soundId, hymnUrl, volume, coords, false)
+    exports.xsound:Distance(soundId, radius)
+    
+    Wait(100)
+    hymnPlaying = true
+    
+    Notify({
+        title = 'Sacred Hymn',
+        description = string.format(Config.Messages.hymnPlaying, hymnTitle),
+        type = 'info',
+        icon = 'music',
+        duration = 5000
+    })
+end)
+
+RegisterNetEvent('priest:client:stopHymn', function()
+    StopHymn()
+end)
+
+---------------------------------
+-- GIVE BIBLE FUNCTIONS
+---------------------------------
+
+RegisterNetEvent('priest:client:receiveBible', function(priestName)
+    Notify({
+        title = 'Holy Gift',
+        description = string.format(Config.Messages.bibleReceived, priestName),
+        type = 'success',
+        icon = 'book-bible',
+        duration = 7000
+    })
+end)
+
+RegisterNetEvent('priest:client:bibleGiven', function(playerName)
+    Notify({
+        title = 'Bible Given',
+        description = string.format(Config.Messages.bibleGiven, playerName),
+        type = 'success',
+        icon = 'gift',
+        duration = 5000
+    })
+end)
+
+---------------------------------
+-- FORWARD DECLARATIONS
+---------------------------------
+
+local OpenBibleMenu
+local SelectSermon
+local SelectHymn
+local GiveBible
 
 ---------------------------------
 -- PREACHING FUNCTIONS
 ---------------------------------
 
--- Forward declaration
-local OpenBibleMenu
-
--- Function to open sermon selection
-local function SelectSermon()
+SelectSermon = function()
     local sermonOptions = {}
     
-    for _, sermon in ipairs(Config.Sermons) do
+    for i, sermon in ipairs(Config.Sermons) do
         table.insert(sermonOptions, {
             title = sermon.title,
             description = sermon.description,
             icon = 'book-bible',
-            onSelect = function()
-                if sermon.custom then
-                    -- Open custom input
-                    local input = lib.inputDialog('Custom Sermon', {
-                        {
-                            type = 'textarea',
-                            label = 'Your Message',
-                            description = 'Enter your sermon message',
-                            required = true,
-                            min = 10,
-                            max = 500
-                        }
-                    })
-                    
-                    if input and input[1] then
-                        TriggerServerEvent('priest:server:preach', input[1])
-                        -- Re-open bible menu after preaching
-                        Wait(100)
-                        OpenBibleMenu()
-                    else
-                        -- If cancelled, go back to bible menu
-                        OpenBibleMenu()
-                    end
-                else
-                    TriggerServerEvent('priest:server:preach', sermon.message)
-                    -- Re-open bible menu after preaching
-                    Wait(100)
-                    OpenBibleMenu()
-                end
-            end
+            action = 'sermon',
+            data = { sermonIndex = i }
         })
     end
     
-    -- Add back button
     table.insert(sermonOptions, {
         title = '← Back',
         description = 'Return to bible menu',
         icon = 'arrow-left',
-        onSelect = function()
-            OpenBibleMenu()
-        end
+        action = 'back',
+        isBack = true
     })
     
-    lib.registerContext({
-        id = 'sermon_menu',
-        title = '📖 Select Sermon',
-        menu = 'bible_menu',
+    ShowMenu({
+        title = 'Select Sermon',
+        type = 'sermon',
         options = sermonOptions
     })
-    
-    lib.showContext('sermon_menu')
 end
 
--- Function to preach
 local function Preach()
     if isHoldingBible then
         StopBibleAnimation()
@@ -233,215 +371,85 @@ local function Preach()
     isHoldingBible = true
     currentAction = 'preaching'
     
-    lib.notify({
+    Notify({
         title = 'Holy Bible',
         description = Config.Messages.preaching,
         type = 'info',
-        duration = 5000,
-        icon = 'church'
+        icon = 'church',
+        duration = 5000
     })
     
-    -- Show sermon selection (menu stays in context chain)
     SelectSermon()
 end
 
 ---------------------------------
--- HYMN FUNCTIONS
+-- HYMN MENU
 ---------------------------------
 
--- Function to stop hymn
-local function StopHymn()
-    if activeHymnSound then
-        exports.xsound:Destroy(activeHymnSound)
-        activeHymnSound = nil
-    end
-    
-    -- Ensure flag is reset
-    hymnPlaying = false
-    
-    lib.notify({
-        title = 'Hymn Ended',
-        description = Config.Messages.hymnStopped,
-        type = 'info',
-        duration = 3000,
-        icon = 'music'
-    })
-end
-
--- Function to play hymn
-local function PlayHymn(hymnTitle, hymnUrl)
-    if not isXsoundAvailable() then
-        lib.notify({
-            title = 'Error',
-            description = Config.Messages.xsoundNotFound,
-            type = 'error',
-            duration = 5000,
-            icon = 'exclamation-triangle'
-        })
-        return
-    end
-    
-    local playerCoords = GetEntityCoords(PlayerPedId())
-    
-    -- Stop any existing hymn first
-    if hymnPlaying or activeHymnSound then
-        TriggerServerEvent('priest:server:stopHymn')
-        Wait(500) -- Wait for stop to process
-    end
-    
-    -- Trigger server to play for all nearby
-    TriggerServerEvent('priest:server:playHymn', playerCoords, hymnTitle, hymnUrl)
-end
-
--- Function to open hymn selection
-local function SelectHymn()
+SelectHymn = function()
     if not Config.Hymns.enabled then
-        lib.notify({
+        Notify({
             title = 'Hymns',
             description = 'Hymns are currently disabled',
             type = 'error',
-            duration = 3000,
-            icon = 'music'
+            icon = 'music',
+            duration = 3000
         })
         return
     end
     
     local hymnOptions = {}
     
-    for _, hymn in ipairs(Config.Hymns.songs) do
+    if hymnPlaying then
+        table.insert(hymnOptions, {
+            title = '⏹ Stop Current Hymn',
+            description = 'End the hymn that is currently playing',
+            icon = 'stop',
+            iconColor = 'linear-gradient(135deg, #e74c3c 0%, #c0392b 100%)',
+            action = 'stopHymnMenu',
+            isStopHymn = true
+        })
+    end
+    
+    for i, hymn in ipairs(Config.Hymns.songs) do
         table.insert(hymnOptions, {
             title = hymn.title,
             description = hymn.description,
             icon = 'music',
-            iconColor = '#9b59b6',
-            onSelect = function()
-                if hymn.custom then
-                    -- Open custom input for URL
-                    local input = lib.inputDialog('Custom Hymn', {
-                        {
-                            type = 'input',
-                            label = 'Hymn Title',
-                            description = 'Enter the hymn name',
-                            required = true,
-                            min = 3,
-                            max = 50
-                        },
-                        {
-                            type = 'input',
-                            label = 'YouTube URL',
-                            description = 'Enter YouTube or direct audio URL',
-                            required = true,
-                            min = 10,
-                            max = 200
-                        }
-                    })
-                    
-                    if input and input[1] and input[2] then
-                        PlayHymn(input[1], input[2])
-                        Wait(100)
-                        OpenBibleMenu()
-                    else
-                        OpenBibleMenu()
-                    end
-                else
-                    PlayHymn(hymn.title, hymn.url)
-                    Wait(100)
-                    OpenBibleMenu()
-                end
-            end
+            iconColor = 'linear-gradient(135deg, #9b59b6 0%, #8e44ad 100%)',
+            action = 'playHymn',
+            data = { hymnIndex = i }
         })
     end
     
-    -- Add stop hymn option if playing
-    if hymnPlaying then
-        table.insert(hymnOptions, 1, {
-            title = '⏹ Stop Current Hymn',
-            description = 'End the hymn that is currently playing',
-            icon = 'stop',
-            iconColor = '#e74c3c',
-            onSelect = function()
-                TriggerServerEvent('priest:server:stopHymn')
-                Wait(500) -- Wait for stop to complete
-                OpenBibleMenu()
-            end
-        })
-    end
-    
-    -- Add back button
     table.insert(hymnOptions, {
         title = '← Back',
         description = 'Return to bible menu',
         icon = 'arrow-left',
-        onSelect = function()
-            OpenBibleMenu()
-        end
+        action = 'back',
+        isBack = true
     })
     
-    lib.registerContext({
-        id = 'hymn_menu',
-        title = '🎵 Select Hymn',
-        menu = 'bible_menu',
+    ShowMenu({
+        title = 'Select Hymn',
+        type = 'hymn',
         options = hymnOptions
     })
-    
-    lib.showContext('hymn_menu')
 end
 
--- Receive hymn play event
-RegisterNetEvent('priest:client:playHymn', function(coords, radius, hymnTitle, hymnUrl, volume)
-    if not isXsoundAvailable() then return end
-    
-    -- Stop any existing hymn first
-    if activeHymnSound then
-        exports.xsound:Destroy(activeHymnSound)
-        Wait(100)
-    end
-    
-    -- Reset flag
-    hymnPlaying = false
-    
-    -- Create unique sound ID
-    local soundId = 'priest_hymn_' .. math.random(10000, 99999)
-    activeHymnSound = soundId
-    
-    -- Play the hymn using xsound
-    exports.xsound:PlayUrlPos(soundId, hymnUrl, volume, coords, false)
-    exports.xsound:Distance(soundId, radius)
-    
-    -- Set flag after successful play
-    Wait(100)
-    hymnPlaying = true
-    
-    lib.notify({
-        title = 'Sacred Hymn',
-        description = string.format(Config.Messages.hymnPlaying, hymnTitle),
-        type = 'info',
-        duration = 5000,
-        icon = 'music',
-        iconColor = '#9b59b6'
-    })
-end)
-
--- Receive hymn stop event
-RegisterNetEvent('priest:client:stopHymn', function()
-    StopHymn()
-end)
-
 ---------------------------------
--- GIVE BIBLE FUNCTIONS
+-- GIVE BIBLE MENU
 ---------------------------------
 
--- Function to give bible
-local function GiveBible()
-    -- Request player list from server
+GiveBible = function()
     RSGCore.Functions.TriggerCallback('priest:server:getPlayers', function(players)
         if not players or #players == 0 then
-            lib.notify({
+            Notify({
                 title = 'Give Bible',
                 description = Config.Messages.noPlayers,
                 type = 'warning',
-                duration = 3000,
-                icon = 'users'
+                icon = 'users',
+                duration = 3000
             })
             return
         end
@@ -449,8 +457,7 @@ local function GiveBible()
         local playerOptions = {}
         
         for _, player in ipairs(players) do
-            -- Different styling for self
-            local iconColor = player.isSelf and '#3498db' or '#d4af37'
+            local iconColor = player.isSelf and 'linear-gradient(135deg, #3498db 0%, #2980b9 100%)' or 'linear-gradient(135deg, #d4af37 0%, #b8942e 100%)'
             local description = player.isSelf and 'Take another bible for yourself' or ('ID: ' .. player.id .. ' | Give them a holy bible')
             
             table.insert(playerOptions, {
@@ -458,66 +465,32 @@ local function GiveBible()
                 description = description,
                 icon = 'user',
                 iconColor = iconColor,
-                onSelect = function()
-                    TriggerServerEvent('priest:server:giveBible', player.id)
-                    -- Re-open bible menu after giving
-                    Wait(100)
-                    OpenBibleMenu()
-                end
+                action = 'givePlayer',
+                data = { playerId = player.id }
             })
         end
         
-        -- Add back button
         table.insert(playerOptions, {
             title = '← Back',
             description = 'Return to bible menu',
             icon = 'arrow-left',
-            onSelect = function()
-                OpenBibleMenu()
-            end
+            action = 'back',
+            isBack = true
         })
         
-        lib.registerContext({
-            id = 'give_bible_menu',
-            title = '📖 Give Bible To...',
-            menu = 'bible_menu',
+        ShowMenu({
+            title = 'Give Bible To...',
+            type = 'give',
             options = playerOptions
         })
-        
-        lib.showContext('give_bible_menu')
     end)
 end
-
--- Receive bible notification
-RegisterNetEvent('priest:client:receiveBible', function(priestName)
-    lib.notify({
-        title = 'Holy Gift',
-        description = string.format(Config.Messages.bibleReceived, priestName),
-        type = 'success',
-        duration = 7000,
-        icon = 'book-bible',
-        iconColor = '#d4af37'
-    })
-end)
-
--- Bible given notification
-RegisterNetEvent('priest:client:bibleGiven', function(playerName)
-    lib.notify({
-        title = 'Bible Given',
-        description = string.format(Config.Messages.bibleGiven, playerName),
-        type = 'success',
-        duration = 5000,
-        icon = 'gift',
-        iconColor = '#2ecc71'
-    })
-end)
 
 ---------------------------------
 -- MAIN MENU
 ---------------------------------
 
--- Function to open bible menu
-function OpenBibleMenu()
+OpenBibleMenu = function()
     local options = {}
     
     for _, option in ipairs(Config.MenuOptions) do
@@ -525,74 +498,219 @@ function OpenBibleMenu()
             title = option.title,
             description = option.description,
             icon = option.icon,
-            onSelect = function()
-                if option.action == 'read' then
-                    ReadBible()
-                elseif option.action == 'hold' then
-                    HoldBible()
-                elseif option.action == 'preach' then
-                    Preach()
-                elseif option.action == 'hymn' then
-                    SelectHymn()
-                elseif option.action == 'bless' then
-                    Bless()
-                elseif option.action == 'give' then
-                    GiveBible()
-                elseif option.action == 'stop' then
-                    StopBibleAnimation()
-                    lib.notify({
-                        title = 'Holy Bible',
-                        description = Config.Messages.stopped,
-                        type = 'info',
-                        duration = 3000,
-                        icon = 'book'
-                    })
-                end
-            end
+            action = option.action
         })
     end
     
-    -- Add dynamic "Stop Hymn" option if hymn is currently playing
     if hymnPlaying then
-        -- Insert before the last "Stop" option
-        table.insert(options, #options, {
+        local insertPosition = #options
+        for i, opt in ipairs(options) do
+            if Config.MenuOptions[i] and Config.MenuOptions[i].action == 'stop' then
+                insertPosition = i
+                break
+            end
+        end
+        
+        table.insert(options, insertPosition, {
             title = '⏹ Stop Hymn',
             description = 'Stop the currently playing hymn',
             icon = 'stop',
-            iconColor = '#e74c3c',
-            onSelect = function()
-                TriggerServerEvent('priest:server:stopHymn')
-                Wait(500)
-                OpenBibleMenu()
-            end
+            action = 'stophymn',
+            isStopHymn = true
         })
     end
     
-    lib.registerContext({
-        id = 'bible_menu',
-        title = '📖 Holy Bible',
+    ShowMenu({
+        title = 'Sacred Actions',
+        type = 'main',
         options = options
     })
-    
-    lib.showContext('bible_menu')
 end
+
+---------------------------------
+-- NUI CALLBACKS
+---------------------------------
+
+RegisterNUICallback('closeMenu', function(data, cb)
+    HideMenu()
+    cb('ok')
+end)
+
+RegisterNUICallback('menuSelect', function(data, cb)
+    local action = data.action
+    
+    if action == 'read' then
+        HideMenu()
+        ReadBible()
+    elseif action == 'hold' then
+        HideMenu()
+        HoldBible()
+    elseif action == 'preach' then
+        HideMenu()
+        Wait(100)
+        Preach()
+    elseif action == 'hymn' then
+        SelectHymn()
+    elseif action == 'bless' then
+        HideMenu()
+        Bless()
+    elseif action == 'give' then
+        GiveBible()
+    elseif action == 'stop' then
+        HideMenu()
+        StopBibleAnimation()
+        Notify({
+            title = 'Holy Bible',
+            description = Config.Messages.stopped,
+            type = 'info',
+            icon = 'book',
+            duration = 3000
+        })
+    elseif action == 'stophymn' then
+        if hymnPlaying then
+            TriggerServerEvent('priest:server:stopHymn')
+            Wait(500)
+            OpenBibleMenu()
+        else
+            Notify({
+                title = 'Stop Hymn',
+                description = 'No hymn is currently playing',
+                type = 'warning',
+                icon = 'music',
+                duration = 3000
+            })
+        end
+    elseif action == 'back' then
+        OpenBibleMenu()
+    elseif action == 'sermon' then
+        local sermonData = data.data
+        if sermonData and sermonData.sermonIndex then
+            local sermonIndex = sermonData.sermonIndex
+            local sermon = Config.Sermons[sermonIndex]
+            
+            if sermon then
+                if sermon.custom then
+                    ShowInput({
+                        title = 'Custom Sermon',
+                        inputs = {
+                            {
+                                type = 'textarea',
+                                label = 'Your Message',
+                                description = 'Enter your sermon message',
+                                required = true,
+                                min = 10,
+                                max = 2000,
+                                placeholder = 'Enter your sermon here...'
+                            }
+                        }
+                    }, function(values)
+                        if values and values[1] and values[1] ~= '' then
+                            TriggerServerEvent('priest:server:preach', values[1])
+                        end
+                        Wait(100)
+                        OpenBibleMenu()
+                    end)
+                else
+                    HideMenu()
+                    TriggerServerEvent('priest:server:preach', sermon.message)
+                end
+            end
+        end
+    elseif action == 'playHymn' then
+        local hymnData = data.data
+        if hymnData and hymnData.hymnIndex then
+            local hymnIndex = hymnData.hymnIndex
+            local hymn = Config.Hymns.songs[hymnIndex]
+            
+            if hymn then
+                if hymn.custom then
+                    ShowInput({
+                        title = 'Custom Hymn',
+                        inputs = {
+                            {
+                                type = 'input',
+                                label = 'Hymn Title',
+                                description = 'Enter the hymn name',
+                                required = true,
+                                min = 3,
+                                max = 50,
+                                placeholder = 'Amazing Grace...'
+                            },
+                            {
+                                type = 'input',
+                                label = 'YouTube URL',
+                                description = 'Enter YouTube or direct audio URL',
+                                required = true,
+                                min = 10,
+                                max = 200,
+                                placeholder = 'https://youtube.com/watch?v=...'
+                            }
+                        }
+                    }, function(values)
+                        if values and values[1] and values[2] then
+                            PlayHymn(values[1], values[2])
+                        end
+                        Wait(100)
+                        OpenBibleMenu()
+                    end)
+                else
+                    PlayHymn(hymn.title, hymn.url)
+                    Wait(100)
+                    OpenBibleMenu()
+                end
+            end
+        end
+    elseif action == 'stopHymnMenu' then
+        TriggerServerEvent('priest:server:stopHymn')
+        Wait(500)
+        OpenBibleMenu()
+    elseif action == 'givePlayer' then
+        local playerData = data.data
+        if playerData and playerData.playerId then
+            TriggerServerEvent('priest:server:giveBible', playerData.playerId)
+        end
+        Wait(100)
+        OpenBibleMenu()
+    end
+    
+    cb('ok')
+end)
+
+RegisterNUICallback('inputSubmit', function(data, cb)
+    if inputData and inputData.callback then
+        inputData.callback(data.values)
+    end
+    HideInput()
+    cb('ok')
+end)
+
+RegisterNUICallback('inputCancel', function(data, cb)
+    if inputData and inputData.callback then
+        inputData.callback(nil)
+    end
+    HideInput()
+    if isMenuOpen then
+        SetNuiFocus(true, true)
+    else
+        OpenBibleMenu()
+    end
+    cb('ok')
+end)
 
 ---------------------------------
 -- EVENTS
 ---------------------------------
 
--- Register usable item
 RegisterNetEvent('priest:client:useBible', function()
     local PlayerData = RSGCore.Functions.GetPlayerData()
     
-    -- Check if player is a priest (optional - remove if you want anyone to use it)
-    if Config.PriestJob and PlayerData.job.name ~= Config.PriestJob then
-        lib.notify({
+    if Config.PriestJob and PlayerData.job and PlayerData.job.name ~= Config.PriestJob then
+        Notify({
             title = 'Holy Bible',
             description = Config.Messages.notPriest,
             type = 'error',
-            duration = 3000,
-            icon = 'ban'
+            icon = 'ban',
+            duration = 3000
         })
         return
     end
@@ -604,7 +722,6 @@ end)
 -- CLEANUP & SAFETY
 ---------------------------------
 
--- Clean up on resource stop
 AddEventHandler('onResourceStop', function(resource)
     if resource == GetCurrentResourceName() then
         if isHoldingBible then
@@ -613,10 +730,10 @@ AddEventHandler('onResourceStop', function(resource)
         if activeHymnSound then
             StopHymn()
         end
+        SetNuiFocus(false, false)
     end
 end)
 
--- Clean up when player dies
 AddEventHandler('gameEventTriggered', function(event, data)
     if event == 'CEventNetworkEntityDamage' then
         local victim = data[1]
@@ -628,7 +745,6 @@ AddEventHandler('gameEventTriggered', function(event, data)
     end
 end)
 
--- Stop bible when entering vehicle
 CreateThread(function()
     while true do
         Wait(1000)
@@ -640,3 +756,5 @@ CreateThread(function()
         end
     end
 end)
+
+print('[Priest Bible] Client loaded successfully!')
