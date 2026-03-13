@@ -1228,3 +1228,381 @@ body {
         font-size: 40px;
     }
 }
+
+/* ==================== BIBLE READER (TURN.JS) ==================== */
+#bible-reader {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.95) 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    animation: fadeIn 0.4s ease;
+}
+
+.bible-reader-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 15px;
+    animation: bookAppear 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+@keyframes bookAppear {
+    from {
+        transform: scale(0.8) rotateX(20deg);
+        opacity: 0;
+    }
+    to {
+        transform: scale(1) rotateX(0);
+        opacity: 1;
+    }
+}
+
+.bible-reader-header {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    font-family: 'Cinzel Decorative', serif;
+    font-size: 28px;
+    color: #d4af37;
+    text-shadow: 0 0 20px rgba(212, 175, 55, 0.5);
+    letter-spacing: 3px;
+}
+
+.bible-reader-header i {
+    font-size: 24px;
+}
+
+/* Turn.js Flipbook Container - BIGGER */
+#flipbook {
+    width: 1100px;
+    height: 700px;
+    position: relative;
+    filter: drop-shadow(0 30px 50px rgba(0, 0, 0, 0.7));
+}
+
+/* Individual pages */
+#flipbook .page {
+    background: linear-gradient(135deg, #f5e6c8 0%, #e8d5a3 30%, #f5e6c8 50%, #e8d5a3 70%, #f5e6c8 100%);
+    overflow: hidden;
+    position: relative;
+}
+
+/* Page texture overlay */
+#flipbook .page::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    opacity: 0.03;
+    pointer-events: none;
+}
+
+/* Aged edges */
+#flipbook .page::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    box-shadow: inset 0 0 60px rgba(139, 115, 85, 0.3);
+    pointer-events: none;
+}
+
+/* Odd pages (right side) */
+#flipbook .odd {
+    background: linear-gradient(135deg, #f5e6c8 0%, #ede0c4 50%, #f5e6c8 100%);
+    border-right: 2px solid #c9b896;
+}
+
+/* Even pages (left side) */
+#flipbook .even {
+    background: linear-gradient(135deg, #f0dbb8 0%, #e8d5a3 50%, #f0dbb8 100%);
+    border-left: 2px solid #c9b896;
+}
+
+/* Page content wrapper - NO SCROLL */
+.bible-page-content {
+    padding: 50px 45px;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    z-index: 1;
+    overflow: hidden;
+}
+
+/* Cover page */
+.bible-cover-page {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    text-align: center;
+    padding: 50px;
+    position: relative;
+    z-index: 1;
+    background: linear-gradient(135deg, #3d2b1f 0%, #2a1f14 50%, #3d2b1f 100%) !important;
+}
+
+.bible-cover-page .cover-cross {
+    font-size: 80px;
+    color: #d4af37;
+    margin-bottom: 25px;
+    text-shadow: 0 0 30px rgba(212, 175, 55, 0.5);
+    animation: glow 2s ease-in-out infinite alternate;
+}
+
+@keyframes glow {
+    from { text-shadow: 0 0 20px rgba(212, 175, 55, 0.5); }
+    to { text-shadow: 0 0 40px rgba(212, 175, 55, 0.8), 0 0 60px rgba(212, 175, 55, 0.4); }
+}
+
+.bible-cover-page .cover-title {
+    font-family: 'Cinzel Decorative', serif;
+    font-size: 42px;
+    color: #d4af37;
+    margin-bottom: 15px;
+    letter-spacing: 5px;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.bible-cover-page .cover-subtitle {
+    font-family: 'EB Garamond', serif;
+    font-size: 20px;
+    color: #c9b896;
+    font-style: italic;
+    letter-spacing: 3px;
+}
+
+.bible-cover-page .cover-ornament-top,
+.bible-cover-page .cover-ornament-bottom {
+    width: 250px;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, #d4af37, transparent);
+    margin: 20px 0;
+}
+
+.bible-cover-page .cover-corners {
+    position: absolute;
+    width: 50px;
+    height: 50px;
+    border: 3px solid #d4af37;
+}
+
+.bible-cover-page .corner-tl { top: 25px; left: 25px; border-right: none; border-bottom: none; }
+.bible-cover-page .corner-tr { top: 25px; right: 25px; border-left: none; border-bottom: none; }
+.bible-cover-page .corner-bl { bottom: 25px; left: 25px; border-right: none; border-top: none; }
+.bible-cover-page .corner-br { bottom: 25px; right: 25px; border-left: none; border-top: none; }
+
+/* Back cover */
+.bible-back-cover {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    text-align: center;
+    padding: 50px;
+    position: relative;
+    z-index: 1;
+    background: linear-gradient(135deg, #3d2b1f 0%, #2a1f14 50%, #3d2b1f 100%) !important;
+}
+
+.bible-back-cover .back-text {
+    font-family: 'Cinzel', serif;
+    font-size: 24px;
+    color: #d4af37;
+    letter-spacing: 3px;
+}
+
+.bible-back-cover i {
+    font-size: 50px;
+    color: #d4af37;
+    margin-bottom: 25px;
+}
+
+/* Scripture page styling - BIGGER TEXT */
+.scripture-title {
+    font-family: 'Cinzel Decorative', serif;
+    font-size: 26px;
+    color: #3d2b1f;
+    text-align: center;
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 2px solid #8b7355;
+    position: relative;
+    flex-shrink: 0;
+}
+
+.scripture-title::after {
+    content: '✝';
+    position: absolute;
+    bottom: -14px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: linear-gradient(135deg, #f5e6c8, #e8d5a3);
+    padding: 0 12px;
+    color: #8b4513;
+    font-size: 16px;
+}
+
+/* Continuation header (no border) */
+.scripture-continuation {
+    font-family: 'Cinzel', serif;
+    font-size: 14px;
+    color: #8b7355;
+    text-align: center;
+    margin-bottom: 15px;
+    font-style: italic;
+    flex-shrink: 0;
+}
+
+.scripture-text {
+    font-family: 'EB Garamond', serif;
+    font-size: 18px;
+    line-height: 1.9;
+    color: #2a1f14;
+    text-align: justify;
+    flex: 1;
+}
+
+/* Drop cap for first letter */
+.drop-cap {
+    font-size: 55px;
+    font-family: 'Cinzel Decorative', serif;
+    float: left;
+    line-height: 1;
+    margin-right: 10px;
+    margin-top: 5px;
+    color: #8b4513;
+    text-shadow: 2px 2px 3px rgba(0, 0, 0, 0.2);
+}
+
+/* Page number */
+.page-num {
+    position: absolute;
+    bottom: 20px;
+    font-family: 'Cinzel', serif;
+    font-size: 14px;
+    color: #8b7355;
+    z-index: 2;
+}
+
+.page-num.left-num {
+    left: 40px;
+}
+
+.page-num.right-num {
+    right: 40px;
+}
+
+/* Page decoration */
+.page-ornament {
+    position: absolute;
+    bottom: 18px;
+    font-size: 16px;
+    color: #8b7355;
+    opacity: 0.5;
+    z-index: 2;
+}
+
+.page-ornament.left-ornament {
+    right: 40px;
+}
+
+.page-ornament.right-ornament {
+    left: 40px;
+}
+
+/* Turn.js shadow */
+#flipbook .shadow {
+    background: rgba(0, 0, 0, 0.1) !important;
+}
+
+/* Navigation - simpler */
+.book-navigation {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    background: linear-gradient(135deg, #3d2b1f 0%, #2a1f14 100%);
+    padding: 12px 25px;
+    border-radius: 25px;
+    border: 2px solid #8b7355;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+.page-indicator {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: #d4af37;
+    font-family: 'Cinzel', serif;
+    font-size: 16px;
+}
+
+.page-indicator i {
+    font-size: 22px;
+}
+
+.reader-close-hint {
+    font-family: 'EB Garamond', serif;
+    font-size: 15px;
+    color: #8b7355;
+    font-style: italic;
+    text-align: center;
+}
+
+.reader-close-hint kbd {
+    background: linear-gradient(135deg, #8b7355, #6b5344);
+    color: #f5e6c8;
+    padding: 4px 12px;
+    border-radius: 5px;
+    font-family: 'Cinzel', serif;
+    font-size: 13px;
+    font-style: normal;
+    margin: 0 3px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+}
+
+/* Responsive */
+@media (max-width: 1200px) {
+    #flipbook {
+        width: 900px;
+        height: 580px;
+    }
+    .scripture-title { font-size: 22px; }
+    .scripture-text { font-size: 16px; }
+    .drop-cap { font-size: 45px; }
+    .bible-page-content { padding: 40px 35px; }
+}
+
+@media (max-width: 950px) {
+    #flipbook {
+        width: 700px;
+        height: 480px;
+    }
+    .scripture-title { font-size: 20px; }
+    .scripture-text { font-size: 14px; line-height: 1.7; }
+    .drop-cap { font-size: 38px; }
+    .bible-page-content { padding: 30px 25px; }
+    .bible-cover-page .cover-title { font-size: 32px; }
+    .bible-cover-page .cover-cross { font-size: 60px; }
+}
+
+@media (max-width: 750px) {
+    #flipbook {
+        width: 95vw;
+        height: 60vh;
+    }
+}

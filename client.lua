@@ -7,6 +7,7 @@ local hymnPlaying = false
 local isMenuOpen = false
 local inputPending = false
 local inputData = nil
+local currentSermonPage = 1
 
 ---------------------------------
 -- NUI FUNCTIONS
@@ -54,6 +55,42 @@ local function HideInput()
     end
     SendNUIMessage({
         action = 'hideInput'
+    })
+end
+
+---------------------------------
+-- BIBLE READING MODE (NON-PRIESTS)
+---------------------------------
+
+local function OpenBibleReader()
+    currentSermonPage = 1
+    
+    -- Prepare all sermons as pages (excluding custom)
+    local pages = {}
+    for i, sermon in ipairs(Config.Sermons) do
+        if not sermon.custom then
+            table.insert(pages, {
+                title = sermon.title,
+                content = sermon.message
+            })
+        end
+    end
+    
+    SetNuiFocus(true, true)
+    SendNUIMessage({
+        action = 'showBibleReader',
+        data = {
+            pages = pages,
+            currentPage = 1,
+            totalPages = #pages
+        }
+    })
+end
+
+local function CloseBibleReader()
+    SetNuiFocus(false, false)
+    SendNUIMessage({
+        action = 'hideBibleReader'
     })
 end
 
@@ -199,21 +236,17 @@ RegisterNetEvent('priest:client:notify', function(data)
     Notify(data)
 end)
 
--- Sermon display (NO MOUSE LOCK - display only!)
 RegisterNetEvent('priest:client:showSermon', function(data)
     SendNUIMessage({
         action = 'showSermon',
         data = data
     })
-    -- NO SetNuiFocus here! Player keeps full control
 end)
 
--- Allow player to dismiss sermon with Backspace
 CreateThread(function()
     while true do
         Wait(0)
-        -- Backspace key to dismiss sermon
-        if IsControlJustPressed(0, 0x156F7119) then -- INPUT_CELLPHONE_CANCEL (Backspace)
+        if IsControlJustPressed(0, 0x156F7119) then
             SendNUIMessage({
                 action = 'hideSermon'
             })
@@ -487,7 +520,7 @@ GiveBible = function()
 end
 
 ---------------------------------
--- MAIN MENU
+-- MAIN MENU (PRIEST)
 ---------------------------------
 
 OpenBibleMenu = function()
@@ -528,6 +561,39 @@ OpenBibleMenu = function()
 end
 
 ---------------------------------
+-- CIVILIAN BIBLE MENU
+---------------------------------
+
+local function OpenCivilianBibleMenu()
+    local options = {
+        {
+            title = 'Read Scripture',
+            description = 'Read passages from the Holy Bible',
+            icon = 'book-open-reader',
+            action = 'civilian_read'
+        },
+        {
+            title = 'Hold Bible',
+            description = 'Hold the bible while standing',
+            icon = 'hand-holding',
+            action = 'civilian_hold'
+        },
+        {
+            title = 'Put Away',
+            description = 'Put the bible away',
+            icon = 'xmark',
+            action = 'civilian_stop'
+        }
+    }
+    
+    ShowMenu({
+        title = 'Holy Bible',
+        type = 'civilian',
+        options = options
+    })
+end
+
+---------------------------------
 -- NUI CALLBACKS
 ---------------------------------
 
@@ -536,10 +602,44 @@ RegisterNUICallback('closeMenu', function(data, cb)
     cb('ok')
 end)
 
+RegisterNUICallback('closeBibleReader', function(data, cb)
+    SetNuiFocus(false, false)
+    -- Stop the reading animation when closing the bible reader
+    StopBibleAnimation()
+    Notify({
+        title = 'Holy Bible',
+        description = 'You closed the bible',
+        type = 'info',
+        icon = 'book',
+        duration = 2000
+    })
+    cb('ok')
+end)
+
 RegisterNUICallback('menuSelect', function(data, cb)
     local action = data.action
     
-    if action == 'read' then
+    -- Civilian actions
+    if action == 'civilian_read' then
+        HideMenu()
+        ReadBible()
+        Wait(500)
+        OpenBibleReader()
+    elseif action == 'civilian_hold' then
+        HideMenu()
+        HoldBible()
+    elseif action == 'civilian_stop' then
+        HideMenu()
+        StopBibleAnimation()
+        Notify({
+            title = 'Holy Bible',
+            description = Config.Messages.stopped,
+            type = 'info',
+            icon = 'book',
+            duration = 3000
+        })
+    -- Priest actions
+    elseif action == 'read' then
         HideMenu()
         ReadBible()
     elseif action == 'hold' then
@@ -692,6 +792,28 @@ RegisterNUICallback('inputCancel', function(data, cb)
     if isMenuOpen then
         SetNuiFocus(true, true)
     else
+        -- Don't reopen menu, just release focus
+        SetNuiFocus(false, false)
+    end
+    cb('ok')
+end)
+
+RegisterNUICallback('inputSubmit', function(data, cb)
+    if inputData and inputData.callback then
+        inputData.callback(data.values)
+    end
+    HideInput()
+    cb('ok')
+end)
+
+RegisterNUICallback('inputCancel', function(data, cb)
+    if inputData and inputData.callback then
+        inputData.callback(nil)
+    end
+    HideInput()
+    if isMenuOpen then
+        SetNuiFocus(true, true)
+    else
         OpenBibleMenu()
     end
     cb('ok')
@@ -703,19 +825,15 @@ end)
 
 RegisterNetEvent('priest:client:useBible', function()
     local PlayerData = RSGCore.Functions.GetPlayerData()
+    local isPriest = PlayerData.job and PlayerData.job.name == Config.PriestJob
     
-    if Config.PriestJob and PlayerData.job and PlayerData.job.name ~= Config.PriestJob then
-        Notify({
-            title = 'Holy Bible',
-            description = Config.Messages.notPriest,
-            type = 'error',
-            icon = 'ban',
-            duration = 3000
-        })
-        return
+    if isPriest then
+        -- Full priest menu
+        OpenBibleMenu()
+    else
+        -- Civilian reading mode
+        OpenCivilianBibleMenu()
     end
-    
-    OpenBibleMenu()
 end)
 
 ---------------------------------

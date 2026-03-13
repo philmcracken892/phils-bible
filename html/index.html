@@ -7,6 +7,8 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700&family=Cinzel+Decorative:wght@400;700&family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+    <!-- jQuery (required for turn.js) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
 </head>
 <body>
     <!-- Notification Container -->
@@ -32,9 +34,7 @@
                     <i class="fas fa-book-bible"></i>
                     <span id="menu-title">Sacred Actions</span>
                 </div>
-                <div class="page-content" id="menu-options">
-                    <!-- Menu options will be inserted here -->
-                </div>
+                <div class="page-content" id="menu-options"></div>
                 <div class="page-footer">
                     <span class="footer-text">Press <kbd>ESC</kbd> to close</span>
                 </div>
@@ -42,19 +42,15 @@
         </div>
     </div>
 
-     <!-- SERMON PARCHMENT DISPLAY -->
+    <!-- SERMON PARCHMENT DISPLAY -->
     <div id="sermon-display" class="hidden">
         <div class="sermon-parchment">
-            <!-- Top scroll roll -->
             <div class="scroll-roll top-roll">
                 <div class="roll-end left"></div>
                 <div class="roll-center"></div>
                 <div class="roll-end right"></div>
             </div>
-            
-            <!-- Main parchment content -->
             <div class="parchment-body">
-                <!-- Header -->
                 <div class="sermon-header">
                     <div class="sermon-icon">
                         <i class="fas fa-church"></i>
@@ -64,22 +60,14 @@
                         <span class="sermon-subtitle">speaks unto the congregation</span>
                     </div>
                 </div>
-                
-                <!-- Decorative divider -->
                 <div class="sermon-divider">
                     <span class="divider-ornament">❦</span>
                 </div>
-                
-                <!-- Scrollable sermon text -->
                 <div class="sermon-content" id="sermon-content">
                     <div class="sermon-text-wrapper" id="sermon-text-wrapper">
-                        <p id="sermon-text">
-                            <!-- Sermon text will be inserted here -->
-                        </p>
+                        <p id="sermon-text"></p>
                     </div>
                 </div>
-                
-                <!-- Footer -->
                 <div class="sermon-footer">
                     <div class="sermon-divider bottom">
                         <span class="divider-ornament">✠</span>
@@ -94,8 +82,6 @@
                     <span class="sermon-hint">Press <kbd>BACKSPACE</kbd> to dismiss</span>
                 </div>
             </div>
-            
-            <!-- Bottom scroll roll -->
             <div class="scroll-roll bottom-roll">
                 <div class="roll-end left"></div>
                 <div class="roll-center"></div>
@@ -104,7 +90,35 @@
         </div>
     </div>
 
-    <!-- Input Dialog -->
+       
+    <div id="bible-reader" class="hidden">
+        <div class="bible-reader-container">
+            <div class="bible-reader-header">
+                <i class="fas fa-book-bible"></i>
+                <span>The Holy Bible</span>
+                <i class="fas fa-cross"></i>
+            </div>
+            
+            
+            <div id="flipbook">
+               
+            </div>
+            
+            
+            <div class="book-navigation">
+                <div class="page-indicator">
+                    <i class="fas fa-book-open"></i>
+                    <span id="page-indicator-text">Page 1 of 12</span>
+                </div>
+            </div>
+            
+            <div class="reader-close-hint">
+                Press <kbd>ESC</kbd> to close • Drag page corners to turn
+            </div>
+        </div>
+    </div>
+
+    
     <div id="input-dialog" class="hidden">
         <div class="dialog-overlay"></div>
         <div class="dialog-container">
@@ -112,9 +126,7 @@
                 <i class="fas fa-feather-pointed"></i>
                 <h2 id="dialog-title">Enter Your Message</h2>
             </div>
-            <div class="dialog-body" id="dialog-inputs">
-                <!-- Inputs will be inserted here -->
-            </div>
+            <div class="dialog-body" id="dialog-inputs"></div>
             <div class="dialog-footer">
                 <button class="dialog-btn cancel-btn" id="dialog-cancel">
                     <i class="fas fa-times"></i> Cancel
@@ -126,7 +138,7 @@
         </div>
     </div>
 
-    <!-- Loading/Processing Overlay -->
+    <!-- Loading Overlay -->
     <div id="loading-overlay" class="hidden">
         <div class="loading-content">
             <div class="loading-cross">
@@ -136,6 +148,9 @@
         </div>
     </div>
 
+    <!-- Turn.js library -->
+    <script src="turn.js"></script>
+    <!-- Main script -->
     <script src="script.js"></script>
 </body>
 </html>

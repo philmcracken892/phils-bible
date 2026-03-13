@@ -14,6 +14,8 @@ let currentMenuData = null;
 let inputCallback = null;
 let sermonTimer = null;
 let sermonTimeRemaining = 0;
+let biblePages = [];
+let flipbookInitialized = false;
 
 // ==================== NOTIFICATION SYSTEM ====================
 function showNotification(data) {
@@ -40,9 +42,7 @@ function showNotification(data) {
     setTimeout(() => {
         notification.classList.add('hiding');
         setTimeout(() => {
-            if (notification.parentNode) {
-                notification.remove();
-            }
+            if (notification.parentNode) notification.remove();
         }, 300);
     }, duration);
 }
@@ -57,23 +57,19 @@ function showSermon(data) {
     const progressFill = document.getElementById('sermon-progress');
     const sermonContent = document.getElementById('sermon-content');
     
-    // Set content
     priestName.textContent = data.priestName || 'A Priest';
     sermonText.textContent = data.message || '';
     
-    // Calculate duration based on word count
     const wordCount = data.message ? data.message.split(/\s+/).length : 0;
     const calculatedDuration = Math.min(Math.max(45, Math.ceil(wordCount / 100) * 15 + 30), 180);
     sermonTimeRemaining = data.duration || calculatedDuration;
     
-    // Set CSS variables for animations
     if (progressFill) {
         progressFill.style.animation = 'none';
-        progressFill.offsetHeight; // Trigger reflow
+        progressFill.offsetHeight;
         progressFill.style.animation = `progressShrink ${sermonTimeRemaining}s linear forwards`;
     }
     
-    // Calculate scroll distance for auto-scroll
     setTimeout(() => {
         if (sermonContent && sermonTextWrapper) {
             const contentHeight = sermonContent.clientHeight;
@@ -83,7 +79,6 @@ function showSermon(data) {
             if (scrollDistance > 0) {
                 const scrollDuration = sermonTimeRemaining - 5;
                 sermonTextWrapper.style.setProperty('--scroll-distance', `-${scrollDistance}px`);
-                sermonTextWrapper.style.setProperty('--scroll-duration', `${scrollDuration}s`);
                 sermonTextWrapper.style.animation = 'none';
                 sermonTextWrapper.offsetHeight;
                 sermonTextWrapper.style.animation = `autoScroll ${scrollDuration}s linear forwards`;
@@ -94,67 +89,263 @@ function showSermon(data) {
         }
     }, 100);
     
-    // Clear any existing timer
     if (sermonTimer) {
         clearInterval(sermonTimer);
         sermonTimer = null;
     }
     
-    // Update timer display
-    if (timerText) {
-        timerText.textContent = `${sermonTimeRemaining}s remaining`;
-    }
+    if (timerText) timerText.textContent = `${sermonTimeRemaining}s remaining`;
     
-    // Start countdown timer
     sermonTimer = setInterval(() => {
         sermonTimeRemaining--;
-        if (timerText) {
-            timerText.textContent = `${sermonTimeRemaining}s remaining`;
-        }
-        
-        if (sermonTimeRemaining <= 0) {
-            hideSermon();
-        }
+        if (timerText) timerText.textContent = `${sermonTimeRemaining}s remaining`;
+        if (sermonTimeRemaining <= 0) hideSermon();
     }, 1000);
     
-    // Show the sermon
     sermonDisplay.classList.remove('hidden');
     sermonDisplay.classList.remove('hiding');
-    
-    // Reset text wrapper position
-    if (sermonTextWrapper) {
-        sermonTextWrapper.style.transform = 'translateY(0)';
-    }
-    
-    console.log('[Sermon] Showing sermon from ' + data.priestName + ' for ' + sermonTimeRemaining + 's');
+    if (sermonTextWrapper) sermonTextWrapper.style.transform = 'translateY(0)';
 }
 
 function hideSermon() {
     const sermonDisplay = document.getElementById('sermon-display');
     const sermonTextWrapper = document.getElementById('sermon-text-wrapper');
     
-    // Clear timer
     if (sermonTimer) {
         clearInterval(sermonTimer);
         sermonTimer = null;
     }
     
-    // Stop animations
-    if (sermonTextWrapper) {
-        sermonTextWrapper.style.animation = 'none';
-    }
+    if (sermonTextWrapper) sermonTextWrapper.style.animation = 'none';
     
-    // Animate out
     if (sermonDisplay) {
         sermonDisplay.classList.add('hiding');
-        
         setTimeout(() => {
             sermonDisplay.classList.add('hidden');
             sermonDisplay.classList.remove('hiding');
         }, 400);
     }
+}
+
+// ==================== BIBLE READER (TURN.JS) ====================
+
+// How many words fit on one page (adjust based on font size)
+const WORDS_PER_PAGE = 120;
+
+// Split text into chunks that fit on a page
+function splitTextIntoPages(text) {
+    const words = text.split(' ');
+    const pages = [];
     
-    console.log('[Sermon] Hidden');
+    for (let i = 0; i < words.length; i += WORDS_PER_PAGE) {
+        pages.push(words.slice(i, i + WORDS_PER_PAGE).join(' '));
+    }
+    
+    return pages;
+}
+
+// Create page HTML
+function createPageHTML(title, text, pageNum, isLeft, isContinuation) {
+    const firstLetter = text.charAt(0);
+    const restOfText = text.substring(1);
+    
+    const numClass = isLeft ? 'left-num' : 'right-num';
+    const ornamentClass = isLeft ? 'left-ornament' : 'right-ornament';
+    
+    let html = `<div class="bible-page-content">`;
+    
+    if (title && !isContinuation) {
+        html += `<div class="scripture-title">${title}</div>`;
+    } else if (isContinuation && title) {
+        html += `<div class="scripture-continuation">— ${title} (continued) —</div>`;
+    }
+    
+    html += `<div class="scripture-text">`;
+    
+    // Only add drop cap on first page of each sermon (not continuations)
+    if (!isContinuation) {
+        html += `<span class="drop-cap">${firstLetter}</span>${restOfText}`;
+    } else {
+        html += text;
+    }
+    
+    html += `</div></div>`;
+    html += `<div class="page-num ${numClass}">${pageNum}</div>`;
+    html += `<div class="page-ornament ${ornamentClass}">❧</div>`;
+    
+    return html;
+}
+
+function showBibleReader(data) {
+    const reader = document.getElementById('bible-reader');
+    const flipbook = document.getElementById('flipbook');
+    
+    biblePages = data.pages || [];
+    
+    // Clear existing pages
+    flipbook.innerHTML = '';
+    
+    // Destroy existing turn.js instance
+    if (flipbookInitialized) {
+        try {
+            $(flipbook).turn('destroy');
+        } catch(e) {}
+        flipbookInitialized = false;
+    }
+    
+    // Create cover page
+    const coverPage = document.createElement('div');
+    coverPage.className = 'page hard';
+    coverPage.innerHTML = `
+        <div class="bible-cover-page">
+            <div class="cover-corners corner-tl"></div>
+            <div class="cover-corners corner-tr"></div>
+            <div class="cover-corners corner-bl"></div>
+            <div class="cover-corners corner-br"></div>
+            <i class="fas fa-cross cover-cross"></i>
+            <div class="cover-ornament-top"></div>
+            <div class="cover-title">Holy Bible</div>
+            <div class="cover-ornament-bottom"></div>
+            <div class="cover-subtitle">The Sacred Scripture</div>
+        </div>
+    `;
+    flipbook.appendChild(coverPage);
+    
+    // Create table of contents (inside cover)
+    const tocPage = document.createElement('div');
+    tocPage.className = 'page hard';
+    tocPage.innerHTML = `
+        <div class="bible-page-content" style="display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;">
+            <i class="fas fa-book-bible" style="font-size:50px;color:#8b4513;margin-bottom:20px;"></i>
+            <div style="font-family:'Cinzel Decorative',serif;font-size:24px;color:#3d2b1f;margin-bottom:25px;">Table of Contents</div>
+            <div style="font-family:'EB Garamond',serif;font-size:16px;color:#5d4037;text-align:left;line-height:2.2;columns:1;">
+                ${biblePages.map((p, i) => `<div style="margin-bottom:5px;"><span style="color:#8b4513;font-weight:bold;">${i + 1}.</span> ${p.title}</div>`).join('')}
+            </div>
+        </div>
+    `;
+    flipbook.appendChild(tocPage);
+    
+    // Create content pages - split each sermon into multiple pages
+    let pageNum = 1;
+    
+    biblePages.forEach((passage) => {
+        // Split this sermon into page-sized chunks
+        const textChunks = splitTextIntoPages(passage.content);
+        
+        textChunks.forEach((chunk, chunkIndex) => {
+            const isFirstChunk = chunkIndex === 0;
+            const isLeft = pageNum % 2 === 1;
+            
+            const contentPage = document.createElement('div');
+            contentPage.className = 'page';
+            contentPage.innerHTML = createPageHTML(
+                passage.title, 
+                chunk, 
+                pageNum, 
+                isLeft, 
+                !isFirstChunk  // isContinuation
+            );
+            flipbook.appendChild(contentPage);
+            pageNum++;
+        });
+    });
+    
+    // Ensure even number of pages (add blank if needed)
+    const totalContentPages = flipbook.children.length;
+    if (totalContentPages % 2 !== 0) {
+        const blankPage = document.createElement('div');
+        blankPage.className = 'page';
+        blankPage.innerHTML = `
+            <div class="bible-page-content" style="display:flex;align-items:center;justify-content:center;">
+                <div style="color:#c9b896;font-size:40px;">❦</div>
+            </div>
+        `;
+        flipbook.appendChild(blankPage);
+    }
+    
+    // Back inside cover
+    const insideBack = document.createElement('div');
+    insideBack.className = 'page hard';
+    insideBack.innerHTML = `
+        <div class="bible-back-cover">
+            <i class="fas fa-pray"></i>
+            <div class="back-text">Amen</div>
+        </div>
+    `;
+    flipbook.appendChild(insideBack);
+    
+    // Back cover
+    const backCover = document.createElement('div');
+    backCover.className = 'page hard';
+    backCover.innerHTML = `
+        <div class="bible-back-cover">
+            <i class="fas fa-cross"></i>
+            <div style="width:200px;height:2px;background:linear-gradient(90deg,transparent,#d4af37,transparent);margin:20px 0;"></div>
+            <div class="back-text">Glory be to God</div>
+        </div>
+    `;
+    flipbook.appendChild(backCover);
+    
+    // Show the reader
+    reader.classList.remove('hidden');
+    
+    // Initialize turn.js
+    setTimeout(() => {
+        $(flipbook).turn({
+            width: 1100,
+            height: 700,
+            autoCenter: true,
+            display: 'double',
+            acceleration: true,
+            gradients: true,
+            elevation: 50,
+            duration: 1200,
+            when: {
+                turned: function(e, page) {
+                    updatePageIndicator(page);
+                }
+            }
+        });
+        
+        flipbookInitialized = true;
+        updatePageIndicator(1);
+        
+        console.log('[Bible Reader] Turn.js initialized with ' + biblePages.length + ' passages');
+    }, 100);
+}
+
+function updatePageIndicator(page) {
+    const indicator = document.getElementById('page-indicator-text');
+    const flipbook = document.getElementById('flipbook');
+    
+    if (indicator && flipbookInitialized) {
+        try {
+            const totalPages = $(flipbook).turn('pages');
+            indicator.textContent = `Page ${page} of ${totalPages}`;
+        } catch(e) {
+            indicator.textContent = `Page ${page}`;
+        }
+    }
+}
+
+function hideBibleReader() {
+    const reader = document.getElementById('bible-reader');
+    const flipbook = document.getElementById('flipbook');
+    
+    if (flipbookInitialized) {
+        try {
+            $(flipbook).turn('destroy');
+        } catch(e) {}
+        flipbookInitialized = false;
+    }
+    
+    reader.classList.add('hidden');
+    
+    fetch(`https://${getResourceName()}/closeBibleReader`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+    }).catch(err => console.log('Fetch error:', err));
 }
 
 // ==================== MENU SYSTEM ====================
@@ -162,19 +353,11 @@ function showMenu(data) {
     const menu = document.getElementById('bible-menu');
     const optionsContainer = document.getElementById('menu-options');
     const menuTitle = document.getElementById('menu-title');
-    const sermonDisplay = document.getElementById('sermon-display');
     
     currentMenuType = data.type || 'main';
     currentMenuData = data;
     
-    // Dim sermon if visible
-    if (sermonDisplay && !sermonDisplay.classList.contains('hidden')) {
-        sermonDisplay.classList.add('has-menu');
-    }
-    
-    if (menuTitle) {
-        menuTitle.textContent = data.title || 'Sacred Actions';
-    }
+    if (menuTitle) menuTitle.textContent = data.title || 'Sacred Actions';
     
     if (optionsContainer) {
         optionsContainer.innerHTML = '';
@@ -188,9 +371,7 @@ function showMenu(data) {
                 if (option.isStopHymn) optionElement.classList.add('stop-hymn');
                 
                 let iconStyle = '';
-                if (option.iconColor) {
-                    iconStyle = `style="background: ${option.iconColor}; color: #fff;"`;
-                }
+                if (option.iconColor) iconStyle = `style="background: ${option.iconColor}; color: #fff;"`;
                 
                 optionElement.innerHTML = `
                     <div class="menu-option-icon" ${iconStyle}>
@@ -207,18 +388,12 @@ function showMenu(data) {
                 
                 optionElement.addEventListener('click', () => {
                     optionElement.style.transform = 'scale(0.98)';
-                    setTimeout(() => {
-                        optionElement.style.transform = '';
-                    }, 100);
+                    setTimeout(() => { optionElement.style.transform = ''; }, 100);
                     
                     fetch(`https://${getResourceName()}/menuSelect`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            action: option.action || '',
-                            index: index,
-                            data: option.data || null
-                        })
+                        body: JSON.stringify({ action: option.action || '', index: index, data: option.data || null })
                     }).catch(err => console.log('Fetch error:', err));
                 });
                 
@@ -227,26 +402,14 @@ function showMenu(data) {
         }
     }
     
-    if (menu) {
-        menu.classList.remove('hidden');
-    }
+    if (menu) menu.classList.remove('hidden');
 }
 
 function hideMenu() {
     const menu = document.getElementById('bible-menu');
-    const sermonDisplay = document.getElementById('sermon-display');
-    
-    if (menu) {
-        menu.classList.add('hidden');
-    }
-    
+    if (menu) menu.classList.add('hidden');
     currentMenuType = 'main';
     currentMenuData = null;
-    
-    // Restore sermon visibility
-    if (sermonDisplay) {
-        sermonDisplay.classList.remove('has-menu');
-    }
 }
 
 // ==================== INPUT DIALOG ====================
@@ -255,58 +418,34 @@ function showInputDialog(data) {
     const dialogTitle = document.getElementById('dialog-title');
     const dialogInputs = document.getElementById('dialog-inputs');
     
-    if (dialogTitle) {
-        dialogTitle.textContent = data.title || 'Enter Information';
-    }
+    if (dialogTitle) dialogTitle.textContent = data.title || 'Enter Information';
     
     if (dialogInputs) {
         dialogInputs.innerHTML = '';
-        
         if (data.inputs && Array.isArray(data.inputs)) {
             data.inputs.forEach((input, index) => {
                 const inputGroup = document.createElement('div');
                 inputGroup.className = 'input-group';
                 
-                let inputElement = '';
+                let el = '';
                 if (input.type === 'textarea') {
-                    inputElement = `
-                        <textarea 
-                            id="dialog-input-${index}" 
-                            placeholder="${input.placeholder || ''}"
-                            ${input.required ? 'required' : ''}
-                            minlength="${input.min || 0}"
-                            maxlength="${input.max || 1000}"
-                        ></textarea>
-                    `;
+                    el = `<textarea id="dialog-input-${index}" placeholder="${input.placeholder || ''}" ${input.required ? 'required' : ''} minlength="${input.min || 0}" maxlength="${input.max || 1000}"></textarea>`;
                 } else {
-                    inputElement = `
-                        <input 
-                            type="${input.type || 'text'}" 
-                            id="dialog-input-${index}" 
-                            placeholder="${input.placeholder || ''}"
-                            ${input.required ? 'required' : ''}
-                            minlength="${input.min || 0}"
-                            maxlength="${input.max || 200}"
-                        >
-                    `;
+                    el = `<input type="${input.type || 'text'}" id="dialog-input-${index}" placeholder="${input.placeholder || ''}" ${input.required ? 'required' : ''} minlength="${input.min || 0}" maxlength="${input.max || 200}">`;
                 }
                 
                 inputGroup.innerHTML = `
                     <label for="dialog-input-${index}">${input.label || ''}</label>
                     ${input.description ? `<div class="input-description">${input.description}</div>` : ''}
-                    ${inputElement}
+                    ${el}
                 `;
-                
                 dialogInputs.appendChild(inputGroup);
             });
         }
     }
     
     inputCallback = data.callback || null;
-    
-    if (dialog) {
-        dialog.classList.remove('hidden');
-    }
+    if (dialog) dialog.classList.remove('hidden');
     
     setTimeout(() => {
         if (dialogInputs) {
@@ -318,9 +457,7 @@ function showInputDialog(data) {
 
 function hideInputDialog() {
     const dialog = document.getElementById('input-dialog');
-    if (dialog) {
-        dialog.classList.add('hidden');
-    }
+    if (dialog) dialog.classList.add('hidden');
     inputCallback = null;
 }
 
@@ -330,27 +467,19 @@ function submitDialog() {
     
     const inputs = dialogInputs.querySelectorAll('input, textarea');
     const values = [];
-    
     let isValid = true;
+    
     inputs.forEach(input => {
         if (input.required && !input.value.trim()) {
             isValid = false;
             input.parentElement.classList.add('shake');
-            setTimeout(() => {
-                input.parentElement.classList.remove('shake');
-            }, 500);
+            setTimeout(() => { input.parentElement.classList.remove('shake'); }, 500);
         }
         values.push(input.value);
     });
     
     if (!isValid) {
-        showNotification({
-            title: 'Validation Error',
-            description: 'Please fill in all required fields',
-            type: 'error',
-            icon: 'exclamation-triangle',
-            duration: 3000
-        });
+        showNotification({ title: 'Error', description: 'Please fill in all fields', type: 'error', icon: 'exclamation-triangle', duration: 3000 });
         return;
     }
     
@@ -363,28 +492,23 @@ function submitDialog() {
     hideInputDialog();
 }
 
-// ==================== LOADING OVERLAY ====================
+// ==================== LOADING ====================
 function showLoading(text) {
     const loading = document.getElementById('loading-overlay');
     if (loading) {
-        const loadingText = loading.querySelector('.loading-text');
-        if (loadingText) {
-            loadingText.textContent = text || 'Loading...';
-        }
+        const lt = loading.querySelector('.loading-text');
+        if (lt) lt.textContent = text || 'Loading...';
         loading.classList.remove('hidden');
     }
 }
 
 function hideLoading() {
     const loading = document.getElementById('loading-overlay');
-    if (loading) {
-        loading.classList.add('hidden');
-    }
+    if (loading) loading.classList.add('hidden');
 }
 
 // ==================== EVENT LISTENERS ====================
 document.addEventListener('DOMContentLoaded', function() {
-    // Cancel button
     const cancelBtn = document.getElementById('dialog-cancel');
     if (cancelBtn) {
         cancelBtn.addEventListener('click', () => {
@@ -397,27 +521,17 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
-    // Confirm button
     const confirmBtn = document.getElementById('dialog-confirm');
-    if (confirmBtn) {
-        confirmBtn.addEventListener('click', submitDialog);
-    }
-    
-    // Sermon close button (if it exists)
-    const sermonCloseBtn = document.getElementById('sermon-close');
-    if (sermonCloseBtn) {
-        sermonCloseBtn.addEventListener('click', () => {
-            hideSermon();
-        });
-    }
+    if (confirmBtn) confirmBtn.addEventListener('click', submitDialog);
 });
 
-// Escape key handler
+// Keyboard handler - ESC only, no arrow keys
 document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
         const inputDialog = document.getElementById('input-dialog');
         const bibleMenu = document.getElementById('bible-menu');
         const sermonDisplay = document.getElementById('sermon-display');
+        const bibleReader = document.getElementById('bible-reader');
         
         if (inputDialog && !inputDialog.classList.contains('hidden')) {
             fetch(`https://${getResourceName()}/inputCancel`, {
@@ -426,6 +540,8 @@ document.addEventListener('keydown', (e) => {
                 body: JSON.stringify({})
             }).catch(err => console.log('Fetch error:', err));
             hideInputDialog();
+        } else if (bibleReader && !bibleReader.classList.contains('hidden')) {
+            hideBibleReader();
         } else if (bibleMenu && !bibleMenu.classList.contains('hidden')) {
             fetch(`https://${getResourceName()}/closeMenu`, {
                 method: 'POST',
@@ -442,10 +558,8 @@ document.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
         const inputDialog = document.getElementById('input-dialog');
         if (inputDialog && !inputDialog.classList.contains('hidden')) {
-            const focusedElement = document.activeElement;
-            if (focusedElement && focusedElement.tagName !== 'TEXTAREA') {
-                submitDialog();
-            }
+            const focused = document.activeElement;
+            if (focused && focused.tagName !== 'TEXTAREA') submitDialog();
         }
     }
 });
@@ -453,54 +567,21 @@ document.addEventListener('keydown', (e) => {
 // ==================== NUI MESSAGE HANDLER ====================
 window.addEventListener('message', (event) => {
     const data = event.data;
-    
     if (!data || !data.action) return;
     
     switch (data.action) {
-        case 'showNotification':
-            if (data.data) {
-                showNotification(data.data);
-            }
-            break;
-            
-        case 'showMenu':
-            if (data.data) {
-                showMenu(data.data);
-            }
-            break;
-            
-        case 'hideMenu':
-            hideMenu();
-            break;
-            
-        case 'showInput':
-            if (data.data) {
-                showInputDialog(data.data);
-            }
-            break;
-            
-        case 'hideInput':
-            hideInputDialog();
-            break;
-            
-        case 'showLoading':
-            showLoading(data.text);
-            break;
-            
-        case 'hideLoading':
-            hideLoading();
-            break;
-            
-        case 'showSermon':
-            if (data.data) {
-                showSermon(data.data);
-            }
-            break;
-            
-        case 'hideSermon':
-            hideSermon();
-            break;
+        case 'showNotification': if (data.data) showNotification(data.data); break;
+        case 'showMenu': if (data.data) showMenu(data.data); break;
+        case 'hideMenu': hideMenu(); break;
+        case 'showInput': if (data.data) showInputDialog(data.data); break;
+        case 'hideInput': hideInputDialog(); break;
+        case 'showLoading': showLoading(data.text); break;
+        case 'hideLoading': hideLoading(); break;
+        case 'showSermon': if (data.data) showSermon(data.data); break;
+        case 'hideSermon': hideSermon(); break;
+        case 'showBibleReader': if (data.data) showBibleReader(data.data); break;
+        case 'hideBibleReader': hideBibleReader(); break;
     }
 });
 
-console.log('[Priest Bible UI] Script loaded successfully');
+console.log('[Priest Bible UI] Script loaded with Turn.js - Mouse control only');
